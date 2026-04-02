@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id             String     @id @default(uuid())
+  userId         String     @map("user_id")
+  items          Json
+  totalAmount    Decimal    @db.Decimal(10, 2) @map("total_amount")
+  status         String     @default("PENDING")
+  idempotencyKey String?    @unique @map("idempotency_key")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  sagaState      SagaState?
+
+  @@map("orders")
+}
+
+model SagaState {
+  id          String    @id @default(uuid())
+  orderId     String    @unique @map("order_id")
+  order       Order     @relation(fields: [orderId], references: [id])
+  currentStep String    @map("current_step")
+  status      String    // ACTIVE, COMPLETED, FAILED
+  startedAt   DateTime  @default(now()) @map("started_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  timeoutAt   DateTime? @map("timeout_at")
+
+  @@map("saga_state")
+}
+
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  eventType     String    @map("event_type")
+  payload       Json
+  correlationId String?   @map("correlation_id")
+  status        String    @default("PENDING") // PENDING, SENT, FAILED
+  createdAt     DateTime  @default(now()) @map("created_at")
+  sentAt        DateTime? @map("sent_at")
+
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId     String   @id @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("processed_events")
+}
+
+model IdempotencyKey {
+  key       String   @id
+  response  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("idempotency_keys")
+}

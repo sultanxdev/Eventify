@@ -1,0 +1,26 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  orderId   String   @unique @map("order_id")
+  amount    Decimal  @db.Decimal(10, 2)
+  status    String   // SUCCEEDED, FAILED
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("payments")
+}
+
+model ProcessedEvent {
+  eventId     String   @id @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("processed_events")
+}

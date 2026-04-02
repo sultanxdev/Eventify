@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id           String        @id @default(uuid())
+  name         String
+  stock        Int
+  price        Decimal       @db.Decimal(10, 2)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  reservations Reservation[]
+
+  @@map("products")
+}
+
+model Reservation {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  status    String   @default("RESERVED") // RESERVED, RELEASED
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("reservations")
+}
+
+model ProcessedEvent {
+  eventId     String   @id @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("processed_events")
+}

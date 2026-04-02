@@ -1,0 +1,252 @@
+services:
+  # ============================================
+  # INFRASTRUCTURE
+  # ============================================
+
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: eventify-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test: kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: eventify-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=eventify
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: eventify-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+  # ============================================
+  # DATABASES (one per service)
+  # ============================================
+
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: eventify-postgres-auth
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: eventify_auth
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+    volumes:
+      - pg_auth_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U auth_user -d eventify_auth
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-orders:
+    image: postgres:16-alpine
+    container_name: eventify-postgres-orders
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: eventify_orders
+      POSTGRES_USER: orders_user
+      POSTGRES_PASSWORD: orders_pass
+    volumes:
+      - pg_orders_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U orders_user -d eventify_orders
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-inventory:
+    image: postgres:16-alpine
+    container_name: eventify-postgres-inventory
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: eventify_inventory
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: inventory_pass
+    volumes:
+      - pg_inventory_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U inventory_user -d eventify_inventory
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres-payments:
+    image: postgres:16-alpine
+    container_name: eventify-postgres-payments
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: eventify_payments
+      POSTGRES_USER: payments_user
+      POSTGRES_PASSWORD: payments_pass
+    volumes:
+      - pg_payments_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U payments_user -d eventify_payments
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============================================
+  # SERVICES
+  # ============================================
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: eventify-auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      DATABASE_URL: "postgresql://auth_user:auth_pass@postgres-auth:5432/eventify_auth"
+      JWT_SECRET: "eventify-super-secret-jwt-key-change-in-production"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "auth-service"
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: eventify-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      AUTH_SERVICE_URL: "http://auth-service:3001"
+      ORDER_SERVICE_URL: "http://order-service:3002"
+      INVENTORY_SERVICE_URL: "http://inventory-service:3003"
+      JWT_SECRET: "eventify-super-secret-jwt-key-change-in-production"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "api-gateway"
+    depends_on:
+      - auth-service
+      - order-service
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    container_name: eventify-order-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      DATABASE_URL: "postgresql://orders_user:orders_pass@postgres-orders:5432/eventify_orders"
+      KAFKA_BROKERS: "kafka:9092"
+      SAGA_TIMEOUT_MS: "30000"
+      OUTBOX_POLL_INTERVAL_MS: "1000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "order-service"
+    depends_on:
+      postgres-orders:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile
+    container_name: eventify-inventory-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      DATABASE_URL: "postgresql://inventory_user:inventory_pass@postgres-inventory:5432/eventify_inventory"
+      KAFKA_BROKERS: "kafka:9092"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "inventory-service"
+    depends_on:
+      postgres-inventory:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    container_name: eventify-payment-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      DATABASE_URL: "postgresql://payments_user:payments_pass@postgres-payments:5432/eventify_payments"
+      KAFKA_BROKERS: "kafka:9092"
+      PAYMENT_FAILURE_RATE: "0"
+      PAYMENT_TIMEOUT_MS: "0"
+      PAYMENT_CRASH_MODE: "false"
+      DUPLICATE_EVENT_MODE: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "payment-service"
+    depends_on:
+      postgres-payments:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: eventify-notification-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      KAFKA_BROKERS: "kafka:9092"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "notification-service"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  kafka_data:
+  pg_auth_data:
+  pg_orders_data:
+  pg_inventory_data:
+  pg_payments_data:

@@ -1,4 +1,16 @@
 # 🚀 Eventify — Reliable Distributed Order Processing
+# 🚧 Eventify — Under Development
+
+Eventify is currently under active development.
+
+The project is being built to provide a scalable and modern event management platform with real-time features, secure authentication, booking workflows, and a production-grade backend architecture.
+
+## Current Status
+- Core backend architecture in progress
+- APIs and database schema may change
+- UI/UX improvements ongoing
+- Some features may be incomplete or unstable
+
 
 > Event-driven microservices system designed to **handle real-world failure scenarios** using Saga orchestration, transactional Outbox, and idempotent consumers.
 

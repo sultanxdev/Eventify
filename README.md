@@ -1,4 +1,4 @@
-# 🚀 Eventify — Reliable Distributed Order Processing
+
 # 🚧 Eventify — Under Development
 
 Eventify is currently under active development.

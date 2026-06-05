@@ -36,18 +36,7 @@ Distributed systems don't fail cleanly. They fail like this:
 
 ---
 
-## 🧠 What this system demonstrates
 
-| Capability | Implementation |
-|-----------|----------------|
-| ✅ Saga Orchestration | No distributed transactions — deterministic state machine |
-| ✅ Transactional Outbox | Atomic DB write + event publish — no dual-write risk |
-| ✅ Idempotent Consumers | Duplicate events don't cause double processing |
-| ✅ At-least-once Handling | System correct even when Kafka redelivers |
-| ✅ Compensation Flows | Automatic rollback on payment failure |
-| ✅ Failure Injection | Simulate crashes, timeouts, duplicates |
-| ✅ Distributed Tracing | End-to-end visibility across all services |
-| ✅ DB-per-Service | True data isolation, no shared databases |
 
 👉 **This is not CRUD. This is failure-aware backend engineering.**
 
